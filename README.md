@@ -1,21 +1,18 @@
 # ABIRL
-#
-# A. C. Boley 15 Sept 2021
-#
-#
 
 A Basic Image Reduction Library
 ===============================
+A. C. Boley, 15 Sept. 2021
 
 ABIRL is a simple implementation of astropy and related libraries to reduce
 astronomical observations. It is also a work in progress, and this repo is
 to help me stay organized. 
 
 In `python`, load the library as normal:
-> >import ABIRL as ab
+> :import ABIRL as ab
 
 You can always type
-> help(ab) 
+> :help(ab) 
 to see your options
 
 The following provides a list of the main tasks.
