@@ -458,7 +458,7 @@ def meanCombine(fout, filelist):
     NY, NX = imgdata0.shape
     print(NY, NX)
 
-    imgavg = np.zeros(NY,NX)
+    imgavg = np.zeros([NY,NX])
 
     i = 1
     names = []
@@ -532,6 +532,7 @@ def medianCombine(fout, filelist):
     meddata = np.zeros((NY,NX))
 
     meddata = np.median(imgcube,axis=0)
+    print("size of median array is {}".format(meddata.shape))
 
     hdulout[0].data = meddata
     head.set('comment',
