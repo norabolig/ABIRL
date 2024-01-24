@@ -10,6 +10,14 @@ import sys
 import numpy as np
 import os
 
+def set_bitpix(hdul,BITPIX):
+    if BITPIX==16: hdul[0].scale('int16')
+    elif BITPIX==32: hdul[0].scale('int32')
+    elif BITPIX==-32: hdul[0].scale('float32')
+    elif BITPIX==-64: hdul[0].scale('float64')
+    else:
+        print("Invalid selection for BITPIX {}".format(BITPIX))
+
 def headerSearch(filelist, SEARCHKEY="OBJECT", SEARCHVAL="bias",NAMEONLY=False,LISTALL=False):
     """
     Scans list of file names to display exposure times and object types from HDU header.
@@ -47,7 +55,7 @@ def headerSearch(filelist, SEARCHKEY="OBJECT", SEARCHVAL="bias",NAMEONLY=False,L
 
     fh.close()
 
-def addCoords(fout,filelist,pxu=1e-3):
+def addCoords(fout,filelist,pxu=1e-3,BITPIX=-32):
     """IF YOU KNOW THE APPROXIMATE PLATE SCALE AND COORDS, YOU CAN USE THIS. BUT BE CAREFUL. IT MUST BE CHECKED MANUALLY, ALTHOUGH IT SHOULD BE OK FOR DAO IMAGES""" 
     fh = open(filelist, "r")
     print(fh)
@@ -105,12 +113,13 @@ def addCoords(fout,filelist,pxu=1e-3):
 
         head.set('comment', 'Set coords from file {}'.format(fpath))
 
-        head['BITPIX']=-32
+
+        set_bitpix(hdul,BITPIX)
         hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
         hdul.close()
         iter += 1
 
-def medianFilter(fout,filelist,BLOCKX=1,BLOCKY=1):
+def medianFilter(fout,filelist,BLOCKX=1,BLOCKY=1,BITPIX=-32):
     """ 
     Applies a median filter over the entire image in that it runs a window over
     the original data and replaces each pixel with the median for a window centred
@@ -137,8 +146,7 @@ def medianFilter(fout,filelist,BLOCKX=1,BLOCKY=1):
         corrected = median_filter(imgdata,size=(BLOCKY*2+1,BLOCKX*2+1))
          
 
-        head['BITPIX']=-32
-        print(head['BITPIX'])
+        set_bitpix(hdul,BITPIX)
         head.set('comment', 'Median filtered (despiked) from {}'.format(fpath))
         hdul[0].data = corrected
         
@@ -148,7 +156,7 @@ def medianFilter(fout,filelist,BLOCKX=1,BLOCKY=1):
         iter += 1
 
 
-def chunkQuartileFlatten(fout,filelist,BLOCKX=32,BLOCKY=32,SKIP=1):
+def chunkQuartileFlatten(fout,filelist,BLOCKX=32,BLOCKY=32,SKIP=1,BITPIX=-32):
     """ 
     Subtract the median value from all pixels within a chunk of the image.
     The median value is based on a window of width 2 BLOCKX +1 and 2 BLOCKY +1. 
@@ -204,9 +212,8 @@ def chunkQuartileFlatten(fout,filelist,BLOCKX=32,BLOCKY=32,SKIP=1):
              corrected[j-SKIP:j+SKIP+1,i-SKIP:i+SKIP+1]=imgdata[j-SKIP:j+SKIP+1,i-SKIP:i+SKIP+1]-med
 
 
-        head['BITPIX']=-32
-        print(head['BITPIX'])
         head.set('comment', 'Quartile flattened from {}'.format(fpath))
+        set_bitpix(hdul,BITPIX)
         hdul[0].data = corrected
         
 
@@ -215,7 +222,7 @@ def chunkQuartileFlatten(fout,filelist,BLOCKX=32,BLOCKY=32,SKIP=1):
         iter += 1
 
  
-def medianFlatten(fout,filelist,BLOCKX=32,BLOCKY=32):
+def medianFlatten(fout,filelist,BLOCKX=32,BLOCKY=32,BITPIX=-32):
     """ 
     Subtracts the median within a window from each pixel. 
     The window is centred on the pixel of interest, with size 2 BLOCK* + 1. 
@@ -263,9 +270,8 @@ def medianFlatten(fout,filelist,BLOCKX=32,BLOCKY=32):
              corrected[j][i]=imgdata[j][i]-med
 
 
-        head['BITPIX']=-32
-        print(head['BITPIX'])
         head.set('comment', 'Median flattened from {}'.format(fpath))
+        set_bitpix(hdul,BITPIX)
         hdul[0].data = corrected
         
 
@@ -276,7 +282,7 @@ def medianFlatten(fout,filelist,BLOCKX=32,BLOCKY=32):
    
 
 
-def chunkMedianSubtract(fout,filelist,BLOCKY=16,BLOCKX=8):
+def chunkMedianSubtract(fout,filelist,BLOCKY=16,BLOCKX=8,BITPIX=-32):
     """ 
     Super fast way to flatten an image by directly subtracting medians 
     based on a supergrid set by BLOCKY and BLOCKX subdivisions of the 
@@ -326,14 +332,15 @@ def chunkMedianSubtract(fout,filelist,BLOCKY=16,BLOCKX=8):
         head.set('comment', 'Subtracted median chunks from {}'.format(fpath))
         hdul[0].data = corrected
 
-        head['BITPIX']=-32
+
+        set_bitpix(hdul,BITPIX)
         hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
         hdul.close()
         iter += 1
 
 
 
-def addBase(fout,filelist,base=100):
+def addBase(fout,filelist,base=100,BITPIX=-32):
     """Sometimes it could be advantageous to add a flat background adu. Not standard"""
 
     fh = open(filelist, "r")
@@ -357,18 +364,19 @@ def addBase(fout,filelist,base=100):
         head.set('comment', 'Added {} to file {}'.format(base, fpath))
         hdul[0].data = corrected
 
-        head['BITPIX']=-32
+        set_bitpix(hdul,BITPIX)
         hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
         hdul.close()
         iter += 1
 
 
-def subtractImg(fout, fitsToSubtract, filelist,catch=1):
+def subtractImg(fout, fitsToSubtract, filelist,catch=1,BITPIX=-32):
     """Subtracts one image from all images in a list. takes(fout,fitsToSubtract,filelist)"""
 
     hdulref = pyfits.open(fitsToSubtract)
     head = hdulref[0].header
-    refdata = hdulref[0].data
+    refdata = hdulref[0].data*1.
+    print(refdata)
     hdulref.close()
 
     fh = open(filelist, "r")
@@ -394,14 +402,14 @@ def subtractImg(fout, fitsToSubtract, filelist,catch=1):
         corrected = imgdata - refdata
 
         head.set('comment', 'Subtracted {} from file {}'.format(fitsToSubtract, fpath))
-        hdul[0].data = corrected
+        hdul[0].data = corrected*1.
 
-        head['BITPIX']=-32
+        set_bitpix(hdul,BITPIX)
         hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
         hdul.close()
         iter += 1
 
-def divideImg(fout, fitsDenominator, filelist):
+def divideImg(fout, fitsDenominator, filelist,BITPIX=-32):
     """Divides all images in list by another image. takes(fout,fitsDenominator,filelist)"""
 
     hdulref = pyfits.open(fitsDenominator)
@@ -435,12 +443,12 @@ def divideImg(fout, fitsDenominator, filelist):
         head.set('comment', 'Divided by {} into file {}'.format(fitsDenominator, fpath))
         hdul[0].data = corrected
 
-        head['BITPIX']=-32
+        set_bitpix(hdul,BITPIX)
         hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
         hdul.close()
         iter += 1
 
-def meanCombine(fout, filelist):
+def meanCombine(fout, filelist, BITPIX=-32):
     """Mean combine files in file list takes (fout,filelist)"""
 
     fh = open(filelist, "r")
@@ -468,7 +476,7 @@ def meanCombine(fout, filelist):
         hdularr.append(hdul)
         data = hdul[0].data
         print(data.shape)
-        imgavg[0:-1][0:-1] += data[0:-1][0:-1]
+        imgavg[0:][0:] += data[0:][0:]
     fh.close()
 
     imgavg=imgavg/NFILES
@@ -480,12 +488,12 @@ def meanCombine(fout, filelist):
     head.set('comment',
              'Mean combined from {} files. Header from central image ({}).'.format(NFILES, names[NFILES // 2]))
 
+    set_bitpix(hdulout,BITPIX)
     hdulout.writeto(fout)
     for i in range(NFILES): hdularr[i].close()
 
 
-
-def medianCombine(fout, filelist):
+def medianCombine(fout, filelist,BITPIX=-32):
     """Median combine files in file list takes (fout,filelist)"""
 
     fh = open(filelist, "r")
@@ -514,7 +522,7 @@ def medianCombine(fout, filelist):
         hdularr.append(hdul)
         data = hdul[0].data
         print(data.shape)
-        imgcube[i][0:-1][0:-1] = data[0:-1][0:-1]
+        imgcube[i][0:][0:] = data[0:][0:]
         i += 1
     fh.close()
 
@@ -538,12 +546,12 @@ def medianCombine(fout, filelist):
     head.set('comment',
              'Median combined from {} files. Header from central image ({}).'.format(NFILES, names[NFILES // 2]))
 
-    head['BITPIX']=-32
+    set_bitpix(hdulout,BITPIX)
     hdulout.writeto(fout)
     for i in range(NFILES): hdularr[i].close()
 
 
-def skyMedianCombine(fout, filelist):
+def skyMedianCombine(fout, filelist,BITPIX=-32):
     """Median combine sky flat files in file list takes (fout,filelist).
        Normalizes files before combine.
     """
@@ -569,7 +577,7 @@ def skyMedianCombine(fout, filelist):
 
     mean=np.mean(imgdata0)
 
-    imgcube[0,0:-1,0:-1]=imgdata0[0:-1,0:-1]/mean
+    imgcube[0,0:,0:]=imgdata0[0:,0:]/mean
 
     i = 1
     names = []
@@ -581,7 +589,7 @@ def skyMedianCombine(fout, filelist):
         mean = np.mean(data)
         data = data/mean
         print(data.shape)
-        imgcube[i][0:-1][0:-1] = data[0:-1][0:-1]
+        imgcube[i][0:][0:] = data[0:][0:]
         i += 1
     fh.close()
 
@@ -603,7 +611,7 @@ def skyMedianCombine(fout, filelist):
     head.set('comment',
              'Median combined from {} files. Header from central image ({}).'.format(NFILES, names[NFILES // 2]))
 
-    head['BITPIX']=0
+    set_bitpix(hdulout,BITPIX)
     hdulout.writeto(fout)
     for i in range(NFILES): hdularr[i].close()
 
@@ -757,7 +765,7 @@ def regionLengths(regionfile):
           
     fh.close()
 
-def rollImage(fout,fin,RISE,RUN):
+def rollImage(fout,fin,RISE,RUN,BITPIX=-32):
      hdul = pyfits.open(fin)
      head = hdul[0].header
      imgdata = hdul[0].data
@@ -781,12 +789,13 @@ def rollImage(fout,fin,RISE,RUN):
      plt.plot(line)
      plt.show()
 
-     head['BITPIX']=-32
+
+     set_bitpix(hdul,BITPIX)
      hdul[0].data =shifted
      hdul.writeto(fout)
 
 
-def gradientMap(foutresid,fin):
+def gradientMap(foutresid,fin,BITPIX=-32):
      """ Shows gradients """
      hdul = pyfits.open(fin)
      head = hdul[0].header
@@ -810,12 +819,12 @@ def gradientMap(foutresid,fin):
         
         resid[iy,ix]=gradavg*0.25
 
-     head['BITPIX']=-32
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = resid
      hdul.writeto(foutresid)
 
 
-def gradientMask(fout,foutresid,fin,sig=3,frac=0.1,limit=2000):
+def gradientMask(fout,foutresid,fin,sig=3,frac=0.1,limit=2000,BITPIX=-32):
      """ Picks out gradients. Intended for eventual masking for artefact removal"""
      hdul = pyfits.open(fin)
      head = hdul[0].header
@@ -865,14 +874,15 @@ def gradientMask(fout,foutresid,fin,sig=3,frac=0.1,limit=2000):
                  resid[j,i]=med 
 
  
-     head['BITPIX']=-32
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = mask
      hdul.writeto(fout)
   
+     set_bitpix(hdul,BITPIX) 
      hdul[0].data = resid
      hdul.writeto(foutresid)
 
-def gaussMask(fout,foutresid,fin,sig=3,frac=0.1,limit=50,bkgrnd=1000):
+def gaussMask(fout,foutresid,fin,sig=3,frac=0.1,limit=50,bkgrnd=1000,BITPIX=-32):
      "In progress"
      from scipy.optimize import curve_fit
      import matplotlib.pylab as plt
@@ -949,14 +959,15 @@ def gaussMask(fout,foutresid,fin,sig=3,frac=0.1,limit=50,bkgrnd=1000):
                 resid[y,x] -= val
 
  
-     head['BITPIX']=-32
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = stars
      hdul.writeto(fout)
   
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = resid+bkgrnd
      hdul.writeto(foutresid)
 
-def gaussFilter(fout,fin,sig=3,bkgrnd=1000):
+def gaussFilter(fout,fin,sig=3,bkgrnd=1000,BITPIX=-32):
      """ In progress. """
      hdul = pyfits.open(fin)
      head = hdul[0].header
@@ -977,12 +988,12 @@ def gaussFilter(fout,fin,sig=3,bkgrnd=1000):
 
      cc = np.fft.ifftshift(np.fft.ifft2(V)).real
 
-     head['BITPIX']=-32
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = cc
      hdul.writeto(fout)
   
 
-def gaussRemove(fout,foutresid,fin,sig=3,frac=0.1,limit=1020):
+def gaussRemove(fout,foutresid,fin,sig=3,frac=0.1,limit=1020,BITPIX=-32):
      """ Experimental """
      hdul = pyfits.open(fin)
      head = hdul[0].header
@@ -1008,14 +1019,49 @@ def gaussRemove(fout,foutresid,fin,sig=3,frac=0.1,limit=1020):
              resid[j][i]-=loc
                 
  
-     head['BITPIX']=-32
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = stars
      hdul.writeto(fout)
   
+     set_bitpix(hdul,BITPIX)
      hdul[0].data = resid
      hdul.writeto(foutresid)
- 
-def fft(fout,infile):
+  
+def autocorrelate(fout,infile,BITPIX=-32):
+        """ Attempt to clip data in frequency space. Work in progress"""
+
+        iter=0
+        import matplotlib.pylab as plt
+        import scipy.signal
+        hdul = pyfits.open(infile)
+
+        head = hdul[0].header
+        imgdata = hdul[0].data
+         
+        F = np.fft.fftshift(np.fft.fft2(imgdata))
+
+        S = F*F
+        #S = F*F.conjugate()
+
+        V=np.fft.ifft2(np.fft.ifftshift(S)).real
+        #V = np.correlate(imgdata,imgdata)
+        #V = scipy.signal.correlate2d(imgdata,imgdata)
+
+        hdul[0].data=V
+        
+        if BITPIX==16: hdul[0].scale('int16')
+        elif BITPIX==32: hdul[0].scale('int32')
+        elif BITPIX==-32: hdul[0].scale('float32')
+        elif BITPIX==-64: hdul[0].scale('float64')
+        else:
+            print("Invalid selection for BITPIX {}".format(BITPIX))
+        
+        set_bitpix(hdul,BITPIX)
+        hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
+        hdul.close()
+
+
+def fft(fout,infile,BITPIX=-32):
         """ Attempt to clip data in frequency space. Work in progress"""
 
         iter=0
@@ -1038,9 +1084,39 @@ def fft(fout,infile):
 
         hdul[0].data=V
         
-        head['BITPIX']=-32
-        
+        set_bitpix(hdul,BITPIX) 
         hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
         hdul.close()
 
+ 
+def Quantiles(infile,q=0.5):
+        """ get count quantiles"""
 
+        iter=0
+        import matplotlib.pylab as plt
+        hdul = pyfits.open(infile)
+
+        head = hdul[0].header
+        imgdata = np.ravel(hdul[0].data)
+        hdul.close()
+        return np.quantile(imgdata,q)
+
+def Sharpness(infile):
+        """ get count quantiles for determining image sharpness"""
+        from scipy.ndimage import median_filter
+        iter=0
+        import matplotlib.pylab as plt
+        hdul = pyfits.open(infile)
+
+        head = hdul[0].header
+        imgdata = hdul[0].data
+        hdul.close()
+        filtered = median_filter(imgdata,size=(3,3))
+        dx,dy=np.gradient(filtered)
+        dnorm = np.average(np.sqrt(dx*dx+dy*dy))
+        return dnorm
+
+
+
+
+         
