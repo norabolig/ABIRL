@@ -690,7 +690,7 @@ def simpleAperture(outfile,filelist,aperturelist):
     ah.close()
     fhout.close()
 
-def getMags(fout,photlist,rad=0.0014):
+def getMags(fout,photlist,rad=0.0014,fltr='g'):
     """ Get magnitudes for objects in aperture file and compare with Gaia catalogue. 
         Requires apiEx and assumes images are astrometrically calibrated"""
     import apiEx
@@ -723,15 +723,24 @@ def getMags(fout,photlist,rad=0.0014):
 
          col = GBP-GRP
 
-         #Gminusg=0.13518 - 0.46245*(col) -0.25171*col**2 + 0.021349*col**3
-         Gminusg=0.2199  -0.6365 *(col) -0.1548 *col**2 + 0.0064*col**3
-     
-         g = G-Gminusg
-         const.append(g-magInst)
-         magConst+=g-magInst
+         if fltr=='g':
+             #Gminusg=0.13518 - 0.46245*(col) -0.25171*col**2 + 0.021349*col**3
+             Gminusg=0.2199  -0.6365 *(col) -0.1548 *col**2 + 0.0064*col**3
+             magout = G-Gminusg
+             const.append(magout-magInst)
+             magConst+=magout-magInst
+ 
+         elif fltr=='V':
+             GminusV= -0.02704 + 0.01424*(col) -0.2156*col**2 + 0.01426*col**3
+             magout = G-GminusV
+             const.append(magout-magInst)
+             magConst+=magout-magInst
 
-         out+="{} {} {} {} {} {} {} {} {} {} {}\n".format(x,y,ra,dec,adu,magInst,G,GBP,GRP,g,g-magInst)
+         else: 
+             raise ValueError('Invalid fiter')
          
+        
+         out+="{} {} {} {} {} {} {} {} {} {} {}\n".format(x,y,ra,dec,adu,magInst,G,GBP,GRP,magout,magout-magInst)
          iter+=1
 
       fh.close()
