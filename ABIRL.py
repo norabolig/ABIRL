@@ -690,7 +690,7 @@ def simpleAperture(outfile,filelist,aperturelist):
     ah.close()
     fhout.close()
 
-def getMags(fout,photlist,rad=0.0014,fltr='g'):
+def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
     """ Get magnitudes for objects in aperture file and compare with Gaia catalogue. 
         Requires apiEx and assumes images are astrometrically calibrated"""
     import apiEx
@@ -729,12 +729,42 @@ def getMags(fout,photlist,rad=0.0014,fltr='g'):
              magout = G-Gminusg
              const.append(magout-magInst)
              magConst+=magout-magInst
- 
+  
+         elif fltr=='I':
+             GminusI= 0.01753 + 0.76*(col) -0.0991*col**2 
+             magout = G-GminusI
+             const.append(magout-magInst)
+             magConst+=magout-magInst
+
+
+         elif fltr=='R':
+             # fix at some point for correct power multiplication
+             GminusR= -0.02275 + col*(0.3961 + col*(-0.1243 + col*( -0.01396 + col*0.003775)))
+             magout = G-GminusR
+             const.append(magout-magInst)
+             magConst+=magout-magInst
+
          elif fltr=='V':
              GminusV= -0.02704 + 0.01424*(col) -0.2156*col**2 + 0.01426*col**3
              magout = G-GminusV
              const.append(magout-magInst)
              magConst+=magout-magInst
+
+         elif fltr=='B':
+             GminusV= -0.02704 + 0.01424*(col) -0.2156*col**2 + 0.01426*col**3
+             diff=999
+             BminusV0=GminusV*1
+             while diff > tol:
+                 BminusV  = -(GminusV + 0.04749 +0.2901*BminusV0**2 - 0.02008*BminusV0**3)/0.0124
+                 diff = np.abs(BminusV-BminusV0)
+                 BminusV0=BminusV*1
+
+             magout = G-GminusV + BminusV
+
+             const.append(magout-magInst)
+             magConst+=magout-magInst
+
+
 
          else: 
              raise ValueError('Invalid fiter')
