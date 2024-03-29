@@ -1155,7 +1155,269 @@ def Sharpness(infile):
         dnorm = np.average(np.sqrt(dx*dx+dy*dy))
         return dnorm
 
+def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0):
+    """ get region width in arcseconds. Assumes four corners and degree in for reading """
+
+    hdul = pyfits.open(imagefile)
+    head = hdul[0].header
+    imgdata = hdul[0].data
+    NY, NX = imgdata.shape
+
+    try:
+        arcsec_pix1 = np.sqrt(head['CD1_1']**2+head['CD1_2']**2)*3600
+        arcsec_pix2 = np.sqrt(head['CD2_1']**2+head['CD2_2']**2)*3600
+        arcsec_pix = (arcsec_pix1+arcsec_pix2)/2
+    except:
+        print("CD's not found in header. Using defined dx ={} and dy={} in arcsec".format(dx,dy))
+        arcsec_pix = (pixdx+pixdy)/2
+    print("Plate scale is set to {} ''/pixel".format(arcsec_pix))
+
+    try:
+        exptime=head['EXPTIME']
+    except:
+        print("EXPTIME not in header. Using defined exposure = {} s".format(exposure))
+        exptime=exposure
+    print("Exposure time used for calcs is {} s".format(exptime))
 
 
+    fh = open(regionfile,"r")
+    for line in fh:
+       if line[0:4]=="line":
+          info,junk=line.split(")")
+          val=info.lstrip("line(").split(",")
+          print(len(val))
+          x0=float(val[0])-1
+          y0=float(val[1])-1
+          x1=float(val[2])-1
+          y1=float(val[3])-1
+
+          Dx=x1-x0
+          Dy=y1-y0 # get slope terms
+
+          alpha = np.pi/2+np.arctan( Dy/Dx )
+          dx=np.cos(alpha)
+          dy=np.sin(alpha)
+
+          #xu0 = x0 + dx; xu1 = x1 + dx
+          #yu0 = y0 + dy; yu1 = y1 + dy
+
+          #xl0 = x0 - dx; xl1 = x1 - dx
+          #yl0 = y0 - dy; yl1 = y1 - dy
+
+
+    mask = np.zeros( (NY,NX) )
+    mask_bg = np.zeros( (NY,NX) )
+
+   
+    lengthMask = int(np.sqrt(Dx**2 + Dy**2))
+    print(x0,y0,x1,y1,lengthMask)
+    alpha90 = alpha-np.pi/2
+
+    idx_source =[]
+    idx_bg =[]
+
+    twoWidth=int(2*width)
+    for l in range(-twoWidth,twoWidth+1):
+    #for l in range(0,1):
+        for w in range(lengthMask):
+             xs0 = int(x0 + (l-0.5)*dx*0.5 + w*np.cos(alpha90))
+             ys0 = int(y0 + (l-0.5)*dy*0.5 + w*np.sin(alpha90)) 
+
+             try:
+                 mask[ys0,xs0] = 1
+             except:continue
+
+    for j in range(NY):
+        for i in range(NX):
+            if mask[j,i]>0: idx_source.append([i,j])
+
+    for l in range(int(-2*overwidth),-twoWidth):
+    #for l in range(0,1):
+        for w in range(lengthMask):
+             xs0 = int(x0 + (l-0.5)*dx*0.5 + w*np.cos(alpha90))
+             ys0 = int(y0 + (l-0.5)*dy*0.5 + w*np.sin(alpha90)) 
+
+             try:
+                 mask_bg[ys0,xs0] = 1
+             except:continue
+
+    for l in range(twoWidth+1,int(2*overwidth+1)):
+    #for l in range(0,1):
+        for w in range(lengthMask):
+             xs0 = int(x0 + (l-0.5)*dx*0.5 + w*np.cos(alpha90))
+             ys0 = int(y0 + (l-0.5)*dy*0.5 + w*np.sin(alpha90)) 
+
+             try:
+                 mask_bg[ys0,xs0] = 1
+             except:continue
+
+    for j in range(NY):
+        for i in range(NX):
+            if mask_bg[j,i]>0: idx_bg.append([i,j])
+
+
+    #idx_source = np.array(idx_source)
+    #idx_bg     = np.array(idx_bg)
+
+    idx_source_rot = []
+    idx_bg_rot     = []
+
+    print("length of idx_source = {}".format(len(idx_source)))
+
+    def rotate(x,y,a):
+        return x*np.cos(a)-y*np.sin(a), x*np.sin(a) + y*np.cos(a)
+
+    for i in range(len(idx_source)):
+        x,y=idx_source[i]
+        idx_source_rot.append(rotate(x-x0,y-y0,-alpha90))
+    for i in range(len(idx_bg)):
+        x,y=idx_bg[i]
+        idx_bg_rot.append(rotate(x-x0,y-y0,-alpha90))
+
+    idx_source_rot = np.array(idx_source_rot)
+    idx_bg_rot = np.array(idx_bg_rot)
+    xs=[];ys=[]
+    xb=[];yb=[]
+    for xy in idx_source_rot:
+        xs.append(xy[0])
+        ys.append(xy[1])
+    for xy in idx_bg_rot:
+        xb.append(xy[0])
+        yb.append(xy[1])
+
+    xs=np.array(xs)
+    ys=np.array(ys)
+    xb=np.array(xb)
+    yb=np.array(yb)
+
+    i_xs_sorted = np.argsort(xs)
+    i_xb_sorted = np.argsort(xb)
+
+    ix_last=0
+    isample=0
+    line_flux=[]
+    line_r=[]
+    line_c=[]
+    flxs_median=[]
+    flxs_mean=[]
+    while True:
+        xblock_start=isample*sampleWidth
+        xblock_end=(isample+1)*sampleWidth
+        if xblock_end > xs[i_xs_sorted[-1]]:break
+
+        s=ix_last*1
+        xval = xs[i_xs_sorted[s]]
+        flux = 0
+        count=0
+        flxs=[]
+        while xval < xblock_end:
+            u,v = idx_source[i_xs_sorted[s]]
+            flxs.append(imgdata[v,u])
+            flux+=imgdata[v,u]
+            count+=1
+            s+=1
+            xval = xs[i_xs_sorted[s]]
+        ix_last=s*1
+        flxs=np.sort(np.array(flxs))
+        flxs_median.append(np.median(flxs[-5:]))
+        flxs_mean.append(np.mean(flxs[-5:]))
+        line_flux.append(flux)
+        line_r.append(xblock_start+sampleWidth*0.5)
+        line_c.append(count)
+        isample+=1
+
+    ix_last=0
+    isample=0
+    bg_median=[]
+    while True:
+        xblock_start=isample*sampleWidth
+        xblock_end=(isample+1)*sampleWidth
+        if xblock_end > xs[i_xs_sorted[-1]]:break
+
+        s=ix_last*1
+        xval = xb[i_xb_sorted[s]]
+        bgs=[]
+        count=0
+        while xval < xblock_end:
+            u,v = idx_bg[i_xb_sorted[s]]
+            bgs.append(imgdata[v,u])
+            count+=1
+            s+=1
+            xval = xb[i_xb_sorted[s]]
+        bgs=np.array(bgs)
+        bg_median.append(np.median(bgs))
+        isample+=1
+
+    line_flux=np.array(line_flux)
+    line_r=np.array(line_r)
+    line_c=np.array(line_c)
+    bg_median=np.array(bg_median)
+    flxs_median=np.array(flxs_median)
+
+    line_nflux=(line_flux-bg_median*line_c)/(sampleWidth)
+    line_reduced_flux = line_nflux*exptime*rate/arcsec_pix
+    line_mag=-2.5*np.log10(line_reduced_flux) + calMag
+    line_surfbavg = -2.5*np.log10(line_nflux*sampleWidth/(line_c*arcsec_pix**2)) + calMag
+    line_surfb_md = -2.5*np.log10((flxs_median-bg_median)/arcsec_pix**2) + calMag
+    line_surfb_mn = -2.5*np.log10((flxs_mean-bg_median)/arcsec_pix**2) + calMag
+
+    import matplotlib.pylab as plt
+    plt.figure()
+    plt.scatter(xs,ys,s=0.2)
+    plt.scatter(xb,yb,color='red',s=0.2)
+
+    plt.figure()
+    plt.title("Length normalized line flux")
+    plt.xlabel('Pixels Along Streak')
+    plt.ylabel('Pixel count divided by box width')
+    plt.plot(line_r,line_nflux)
+
+    plt.figure()
+    plt.xlabel('Pixels Along Streak')
+    plt.ylabel('Pixels in box')
+    plt.title("Pixel counts per sample")
+    plt.plot(line_r,line_c)
+
+    plt.figure()
+    plt.title("Surface Brightness per Sq. Arcsec")
+    plt.xlabel('Pixels Along Streak')
+    plt.ylabel('Mag per sq. arcsec')
+    plt.plot(line_r,line_surfb_md)
+    plt.plot(line_r,line_surfb_mn)
+    #plt.plot(line_r,line_surfbavg)
+
+    plt.figure()
+    plt.title("Background Counts")
+    plt.plot(line_r,bg_median)
+
+    plt.figure()
+    plt.title("Running magnitude")
+    plt.xlabel('Pixels Along Streak')
+    plt.ylabel('Mag')
+    plt.plot(line_r,line_mag)
+
+ 
+
+
+    plt.show()
+
+
+    mask_tot = mask + mask_bg
+    mask_tot[mask_tot>1]=1
+    V = imgdata*mask_tot
+    
+
+    hdul[0].data=V
+        
+    set_bitpix(hdul,BITPIX) 
+    hdul.writeto(fout)
+    hdul.close()
+
+    fh.close()
+
+
+
+
+        
 
          
