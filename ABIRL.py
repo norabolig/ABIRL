@@ -1156,7 +1156,7 @@ def Sharpness(infile):
         return dnorm
 
 def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0):
-    """ get region width in arcseconds. Assumes four corners and degree in for reading """
+    """ region file in pixels """
 
     hdul = pyfits.open(imagefile)
     head = hdul[0].header
