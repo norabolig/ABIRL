@@ -1288,7 +1288,7 @@ def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BI
           Dx=x1-x0
           Dy=y1-y0 # get slope terms
 
-          alpha = np.pi/2+np.arctan( Dy/Dx )
+          alpha = np.pi/2+np.arctan2( Dy, Dx )
           dx=np.cos(alpha)
           dy=np.sin(alpha)
 
