@@ -1249,7 +1249,7 @@ def Sharpness(infile):
         dnorm = np.average(np.sqrt(dx*dx+dy*dy))
         return dnorm
 
-def traceStreak(outtable="trace.tbl",imagefile,regionfile,fout=None,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0,PLOT=False):
+def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0,PLOT=False):
     """ region file in pixels """
 
     hdul = pyfits.open(imagefile)
@@ -1498,7 +1498,7 @@ def traceStreak(outtable="trace.tbl",imagefile,regionfile,fout=None,width=8,over
         fo.write("{} {} {} {}\n".format(line_r[i],line_surfb_md[i],line_surfb_mn[i],line_mag[i]))
     fo.close()
 
-    if fout not None:
+    if fout is not None:
        mask_tot = mask + mask_bg
        mask_tot[mask_tot>1]=1
        V = imgdata*mask_tot
