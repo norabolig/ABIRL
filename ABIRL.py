@@ -575,9 +575,9 @@ def skyMedianCombine(fout, filelist,BITPIX=-32):
     print(imgcube[0].shape)
 
 
-    mean=np.mean(imgdata0)
+    med=np.median(imgdata0)
 
-    imgcube[0,0:,0:]=imgdata0[0:,0:]/mean
+    imgcube[0,0:,0:]=imgdata0[0:,0:]/med
 
     i = 1
     names = []
@@ -586,10 +586,10 @@ def skyMedianCombine(fout, filelist,BITPIX=-32):
         hdul = pyfits.open(line.rstrip())
         hdularr.append(hdul)
         data = hdul[0].data
-        mean = np.mean(data)
-        data = data/mean
+        med = np.median(data)
+        data = data/med
         print(data.shape)
-        imgcube[i][0:][0:] = data[0:][0:]
+        imgcube[i][0:][0:] = data[0:][0:]*1
         i += 1
     fh.close()
 
@@ -607,12 +607,13 @@ def skyMedianCombine(fout, filelist,BITPIX=-32):
 
     meddata=(np.median(imgcube,axis=0))
 
+    set_bitpix(hdulout,BITPIX)
     hdulout[0].data = meddata
     head.set('comment',
              'Median combined from {} files. Header from central image ({}).'.format(NFILES, names[NFILES // 2]))
 
-    set_bitpix(hdulout,BITPIX)
     hdulout.writeto(fout)
+    hdulout.close()
     for i in range(NFILES): hdularr[i].close()
 
 def getMedian(filename):
@@ -688,7 +689,100 @@ def simpleAperture(outfile,filelist,aperturelist):
         iter += 1
     fh.close()
     ah.close()
+
+def simpleApertureDeg(outfile,filelist,apertureFile,PANNULUS=4,ifstart=0):
+    """You need to first create an aperture list that contains the pixel X Y 
+       coordinates, the inner radius of the aperture, and the outer radius of the 
+       aperture. The filelist should have the same order as the aperture list.  
+       takes (outfile,filelist,apertureFile)
+    """
+
+    fh = open(filelist, "r")
+    ah = open(apertureFile,"r")
+
+    from astropy.wcs import WCS 
+    from astropy.coordinates import SkyCoord
+
+
+    apertures=[]
+    for line in ah:
+       if line[0:6]=="circle":
+          info,junk=line.split('")')
+          val=info.lstrip("circle(").split(",")
+          print(len(val))
+          x0=float(val[0])
+          y0=float(val[1])
+          r0=float(val[2])
+          r1=float(val[2])
+          apertures.append({'x0':x0,'y0':y0,'r0':r0,'r1':r1})
+    ah.close()
+    for dicts in apertures: print(dicts)
+
+
+    iter = 0
+    for line in fh:
+        fpath = line.rstrip()
+        hdul = pyfits.open(fpath)
+
+        head = hdul[0].header
+        imgdata = hdul[0].data
+        w=WCS(head)
+
+        NY, NX = imgdata.shape
+
+        try:
+            arcsec_pix1 = np.sqrt(head['CD1_1']**2+head['CD1_2']**2)*3600
+            arcsec_pix2 = np.sqrt(head['CD2_1']**2+head['CD2_2']**2)*3600
+            arcsec_pix = (arcsec_pix1+arcsec_pix2)/2
+        except:
+            print("CD's not found in header. Using defined dx ={} and dy={} in arcsec".format(dx,dy))
+            arcsec_pix = (pixdx+pixdy)/2
+        print("Plate scale is set to {} ''/pixel".format(arcsec_pix))
+
+
+
+        fhout = open(outfile+ "-" + repr(iter+ifstart).zfill(6), "w")
+        fhout.write("#{}\n".format(fpath))
+        for dicts in apertures:
+            x0=dicts["x0"]
+            y0=dicts["y0"]
+            sky=SkyCoord(ra=x0,dec=y0,frame='icrs',unit='deg')
+            print(sky)
+            X0,Y0=w.world_to_pixel(sky)
+            print(X0,Y0)
+            X0=int(X0)-1
+            Y0=int(Y0)-1
+            APERTURE=dicts["r0"]/arcsec_pix
+            BAPERTURE=dicts["r0"]/arcsec_pix+PANNULUS
+
+            BLOOK = int(BAPERTURE) + 2
+            bg = []
+            cells = 0
+            sum = 0.
+            for j in range(Y0 - BLOOK, min(Y0 + BLOOK,NY-1)):
+                for i in range(X0 - BLOOK, min(X0 + BLOOK,NX-1)):
+                    r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
+                    if r < BAPERTURE:
+
+                        if r > APERTURE:
+                            bg.append(imgdata[j][i])
+                        else:
+                            sum += imgdata[j][i]
+                            cells += 1
+
+            medbg = np.median(np.array(bg))
+            adu = sum - cells * medbg
+
+            sky=(WCS(head).pixel_to_world_values(X0,Y0))
+
+            fhout.write(" {} {} {} {} {} {}\n ".format(X0,Y0,sky[0],sky[1],adu,-2.5*np.log10(adu)))
+        fhout.close()
+
+        hdul.close()
+        iter += 1
+    fh.close()
     fhout.close()
+
 
 def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
     """ Get magnitudes for objects in aperture file and compare with Gaia catalogue. 
@@ -1155,7 +1249,7 @@ def Sharpness(infile):
         dnorm = np.average(np.sqrt(dx*dx+dy*dy))
         return dnorm
 
-def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0):
+def traceStreak(outtable="trace.tbl",imagefile,regionfile,fout=None,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0,PLOT=False):
     """ region file in pixels """
 
     hdul = pyfits.open(imagefile)
@@ -1194,7 +1288,7 @@ def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BI
           Dx=x1-x0
           Dy=y1-y0 # get slope terms
 
-          alpha = np.pi/2+np.arctan( Dy/Dx )
+          alpha = np.pi/2+np.arctan2( Dy, Dx )
           dx=np.cos(alpha)
           dy=np.sin(alpha)
 
@@ -1203,7 +1297,6 @@ def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BI
 
           #xl0 = x0 - dx; xl1 = x1 - dx
           #yl0 = y0 - dy; yl1 = y1 - dy
-
 
     mask = np.zeros( (NY,NX) )
     mask_bg = np.zeros( (NY,NX) )
@@ -1361,57 +1454,61 @@ def traceStreak(fout,imagefile,regionfile,width=8,overwidth=16,sampleWidth=40,BI
     line_surfb_md = -2.5*np.log10((flxs_median-bg_median)/arcsec_pix**2) + calMag
     line_surfb_mn = -2.5*np.log10((flxs_mean-bg_median)/arcsec_pix**2) + calMag
 
-    import matplotlib.pylab as plt
-    plt.figure()
-    plt.scatter(xs,ys,s=0.2)
-    plt.scatter(xb,yb,color='red',s=0.2)
+    if PLOT==True:
+        import matplotlib.pylab as plt
+        plt.figure()
+        plt.scatter(xs,ys,s=0.2)
+        plt.scatter(xb,yb,color='red',s=0.2)
 
-    plt.figure()
-    plt.title("Length normalized line flux")
-    plt.xlabel('Pixels Along Streak')
-    plt.ylabel('Pixel count divided by box width')
-    plt.plot(line_r,line_nflux)
+        plt.figure()
+        plt.title("Length normalized line flux")
+        plt.xlabel('Pixels Along Streak')
+        plt.ylabel('Pixel count divided by box width')
+        plt.plot(line_r,line_nflux)
 
-    plt.figure()
-    plt.xlabel('Pixels Along Streak')
-    plt.ylabel('Pixels in box')
-    plt.title("Pixel counts per sample")
-    plt.plot(line_r,line_c)
+        plt.figure()
+        plt.xlabel('Pixels Along Streak')
+        plt.ylabel('Pixels in box')
+        plt.title("Pixel counts per sample")
+        plt.plot(line_r,line_c)
 
-    plt.figure()
-    plt.title("Surface Brightness per Sq. Arcsec")
-    plt.xlabel('Pixels Along Streak')
-    plt.ylabel('Mag per sq. arcsec')
-    plt.plot(line_r,line_surfb_md)
-    plt.plot(line_r,line_surfb_mn)
-    #plt.plot(line_r,line_surfbavg)
+        plt.figure()
+        plt.title("Surface Brightness per Sq. Arcsec")
+        plt.xlabel('Pixels Along Streak')
+        plt.ylabel('Mag per sq. arcsec')
+        plt.plot(line_r,line_surfb_md)
+        plt.plot(line_r,line_surfb_mn)
+        #plt.plot(line_r,line_surfbavg)
 
-    plt.figure()
-    plt.title("Background Counts")
-    plt.plot(line_r,bg_median)
+        plt.figure()
+        plt.title("Background Counts")
+        plt.plot(line_r,bg_median)
 
-    plt.figure()
-    plt.title("Running magnitude")
-    plt.xlabel('Pixels Along Streak')
-    plt.ylabel('Mag')
-    plt.plot(line_r,line_mag)
+        plt.figure()
+        plt.title("Running magnitude")
+        plt.xlabel('Pixels Along Streak')
+        plt.ylabel('Mag')
+        plt.plot(line_r,line_mag)
 
- 
+        plt.show()
 
+    fo=open(outtable,"w")
+    fo.write("#pixel, surfb_md, surfb_mn, mag_on_line\n")
+    for i in range(len(line_r)):
+        fo.write("{} {} {} {}\n".format(line_r[i],line_surfb_md[i],line_surfb_mn[i],line_mag[i]))
+    fo.close()
 
-    plt.show()
-
-
-    mask_tot = mask + mask_bg
-    mask_tot[mask_tot>1]=1
-    V = imgdata*mask_tot
+    if fout not None:
+       mask_tot = mask + mask_bg
+       mask_tot[mask_tot>1]=1
+       V = imgdata*mask_tot
     
 
-    hdul[0].data=V
+       hdul[0].data=V
         
-    set_bitpix(hdul,BITPIX) 
-    hdul.writeto(fout)
-    hdul.close()
+       set_bitpix(hdul,BITPIX) 
+       hdul.writeto(fout)
+       hdul.close()
 
     fh.close()
 
