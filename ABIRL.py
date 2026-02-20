@@ -690,14 +690,13 @@ def simpleAperture(outfile,filelist,aperturelist):
     fh.close()
     ah.close()
 
-def simpleApertureDeg(outfile,filelist,apertureFile,PANNULUS=4,ifstart=0):
+def simpleApertureDeg(outfile,filelist,apertureFile,PSKIP=4,PANNULUS=4,ifstart=0,islist=True,Constant=0.,centering=False,astrometry=False,plot=False):
     """You need to first create an aperture list that contains the pixel X Y 
        coordinates, the inner radius of the aperture, and the outer radius of the 
        aperture. The filelist should have the same order as the aperture list.  
        takes (outfile,filelist,apertureFile)
     """
 
-    fh = open(filelist, "r")
     ah = open(apertureFile,"r")
 
     from astropy.wcs import WCS 
@@ -719,6 +718,10 @@ def simpleApertureDeg(outfile,filelist,apertureFile,PANNULUS=4,ifstart=0):
     for dicts in apertures: print(dicts)
 
 
+    if islist: 
+        fh = open(filelist, "r")
+    else:
+        fh = [filelist+"\n"]
     iter = 0
     for line in fh:
         fpath = line.rstrip()
@@ -749,13 +752,89 @@ def simpleApertureDeg(outfile,filelist,apertureFile,PANNULUS=4,ifstart=0):
             sky=SkyCoord(ra=x0,dec=y0,frame='icrs',unit='deg')
             print(sky)
             X0,Y0=w.world_to_pixel(sky)
+            X0=int(np.round(X0))
+            #X0=int(X0)-1
+            Y0=int(np.round(Y0))
+            #Y0=int(Y0)-1
             print(X0,Y0)
-            X0=int(X0)-1
-            Y0=int(Y0)-1
-            APERTURE=dicts["r0"]/arcsec_pix
-            BAPERTURE=dicts["r0"]/arcsec_pix+PANNULUS
 
+
+            APERTURE=dicts["r0"]/arcsec_pix
+            BAPERTURE=dicts["r0"]/arcsec_pix+PANNULUS+PSKIP
             BLOOK = int(BAPERTURE) + 2
+
+            if centering:
+                sum=0.
+                xsum=0.
+                ysum=0.
+                bg = []
+                for j in range(Y0 - BLOOK, min(Y0 + BLOOK,NY-1)):
+                    for i in range(X0 - BLOOK, min(X0 + BLOOK,NX-1)):
+                        r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
+                        if r < BAPERTURE:
+
+                            if r > APERTURE+PSKIP:
+                                bg.append(imgdata[j][i])
+
+                medbg = np.median(np.array(bg))
+#                xproj=[]
+#                yproj=[]
+#                for j in range(Y0 - BLOOK, min(Y0 + BLOOK,NY-1)):
+#                    xsum=0
+#                    for i in range(X0 - BLOOK, min(X0 + BLOOK,NX-1)):
+#                        r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
+#                        if r < APERTURE:
+#                            xsum+=imgdata[j][i]-medbg
+#                    yproj.append(xsum)
+#                for i in range(X0 - BLOOK, min(X0 + BLOOK,NX-1)):
+#                    ysum=0
+#                    for j in range(Y0 - BLOOK, min(Y0 + BLOOK,NY-1)):
+#                        r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
+#                        if r < APERTURE:
+#                            ysum+=imgdata[j][i]-medbg
+#                    xproj.append(ysum)
+#
+#                xproj=np.array(xproj)
+#                yproj=np.array(yproj)
+#                print(xproj)
+#                print(yproj)
+ #               print(xproj.argmax())
+ #               X0=X0-BLOOK+xproj.argmax()
+ #               Y0=Y0-BLOOK+yproj.argmax()
+                       
+                for j in range(Y0 - BLOOK, min(Y0 + BLOOK,NY-1)):
+                    for i in range(X0 - BLOOK, min(X0 + BLOOK,NX-1)):
+                        r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
+                
+                        if r < APERTURE:
+                            sum += (imgdata[j][i]-medbg)
+                            xsum += (i)*(imgdata[j][i]-medbg)
+                            ysum += (j)*(imgdata[j][i]-medbg)
+
+                X0 = (xsum/sum)
+                Y0 = (ysum/sum)
+
+                print(X0,Y0)
+                sky1=w.pixel_to_world_values(X0,Y0)
+                X0=int(np.round(X0))
+                Y0=int(np.round(Y0))
+                print(X0,Y0)
+                print(sky1[0],sky1[1])
+                hrs=sky1[0]/15
+                hr =int(hrs)
+                minutes=(hrs-hr)*60
+                minute =int(minutes)
+                secs = (minutes-minute)*60
+                sec = np.round(secs,2)
+                deg = int(sky1[1])
+                aminutes = abs(sky1[1]-deg)*60
+                aminute = int(aminutes)
+                asecs = (aminutes-aminute)*60
+                asec = np.round(asecs,1)
+                astrometryString="RA {}:{}:{}  DEC {}:{}:{}".format(hr,minute,sec,deg,aminute,asec)
+                print(astrometryString)
+
+
             bg = []
             cells = 0
             sum = 0.
@@ -764,7 +843,7 @@ def simpleApertureDeg(outfile,filelist,apertureFile,PANNULUS=4,ifstart=0):
                     r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
                     if r < BAPERTURE:
 
-                        if r > APERTURE:
+                        if r > APERTURE+PSKIP:
                             bg.append(imgdata[j][i])
                         else:
                             sum += imgdata[j][i]
@@ -772,15 +851,36 @@ def simpleApertureDeg(outfile,filelist,apertureFile,PANNULUS=4,ifstart=0):
 
             medbg = np.median(np.array(bg))
             adu = sum - cells * medbg
+            print("S/N: {}".format(adu/np.sqrt(sum)))
+            if plot:
+                  apcount=[]
+                  rcount=[]
+                  for j in range(Y0 - BLOOK, min(Y0 + BLOOK,NY-1)):
+                      for i in range(X0 - BLOOK, min(X0 + BLOOK,NX-1)):
+                          r = np.sqrt((j - Y0) ** 2 + (i - X0) ** 2)
+                
+                          if r < BAPERTURE:
+                              apcount.append(imgdata[j][i]-medbg)
+                              rcount.append(r)
+                  import matplotlib.pylab as plt
+                  plt.figure()
+                  plt.xlabel("Radius pixels")
+                  plt.ylabel("Pixel ADU")
+                  plt.scatter(rcount,apcount)
+                  plt.show()
+   
+
+
 
             sky=(WCS(head).pixel_to_world_values(X0,Y0))
 
-            fhout.write(" {} {} {} {} {} {}\n ".format(X0,Y0,sky[0],sky[1],adu,-2.5*np.log10(adu)))
+            fhout.write(" {} {} {} {} {} {}\n ".format(X0,Y0,sky[0],sky[1],adu,-2.5*np.log10(adu)+Constant))
+            if astrometry: fhout.write(astrometryString+"\n")
         fhout.close()
 
         hdul.close()
         iter += 1
-    fh.close()
+    if islist:fh.close()
     fhout.close()
 
 
@@ -798,6 +898,9 @@ def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
       iter=0
       out="# x y ra dec adu magInst G GBP GRP g magConst \n"
       const=[]
+
+      wsum=0.
+      adu_sum=0.
       for item in fh:
          if item[0]=="#":continue
          if len(item)<=2:continue
@@ -858,19 +961,20 @@ def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
              const.append(magout-magInst)
              magConst+=magout-magInst
 
-
-
          else: 
              raise ValueError('Invalid fiter')
-         
-        
+
+         adu=float(adu)
+         adu_sum+=adu
+         wsum+=(magout-magInst)*adu
+
          out+="{} {} {} {} {} {} {} {} {} {} {}\n".format(x,y,ra,dec,adu,magInst,G,GBP,GRP,magout,magout-magInst)
          iter+=1
 
       fh.close()
       const=np.array(const)
       fhout=open(fout+ "-" + repr(iname).zfill(6), "w")
-      out+="#Average g-magInst {} median {} and std {}\n".format(magConst/iter,np.median(const),np.std(const))
+      out+="#Weighted m-magInst {} average {} median {} and std {}\n".format(wsum/adu_sum,magConst/iter,np.median(const),np.std(const))
       print(out)   
       fhout.write(out)
       fhout.close()
