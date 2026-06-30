@@ -10,6 +10,29 @@ import sys
 import numpy as np
 import os
 
+def getRegions(outfile,infile,wcsfile, pixvalmin=1000, pixvalmax=10000, pixnum=5, radius=8):
+    """
+    Takes a .new image and a .wcs file and returns a .reg file containing stars in acceptable range.
+    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
+    """
+    import photutils.segmentation as seg
+    from regions import Regions, CircleSkyRegion 
+    import astropy.units as u
+    from astropy.wcs import WCS
+
+    imgdata=pyfits.getdata(infile)
+    header=pyfits.getheader(wcsfile)
+    imgwcs=WCS(header)
+    
+    segment=seg.detect_sources(imgdata,pixvalmin,pixnum)
+    if segment == None:
+        return "Error, No Sources Detected. Change pixel parameters"
+    catalog=seg.SourceCatalog(imgdata, segment, wcs=imgwcs)
+    
+    regions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec)  for source in catalog ]
+    Regions(regions_list).write(outfile, format="ds9", overwrite=True) # currently outputs degrees 
+
+
 def set_bitpix(hdul,BITPIX):
     if BITPIX==16: hdul[0].scale('int16')
     elif BITPIX==32: hdul[0].scale('int32')
