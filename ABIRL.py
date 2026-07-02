@@ -10,6 +10,43 @@ import sys
 import numpy as np
 import os
 
+def getRegions(outfile,infile,wcsfile, pixvalmin=1000, pixvalmax=10000, pixnum=5, radius=8):
+    """
+    Takes a .new image and a .wcs file and returns a .reg file containing stars in acceptable range.
+    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
+    May require installation of photutils and regions
+    """
+    import photutils.segmentation as seg
+    from regions import Regions, CircleSkyRegion 
+    import astropy.units as u
+    from astropy.wcs import WCS
+
+    imgdata=pyfits.getdata(infile)
+    header=pyfits.getheader(wcsfile)
+    imgwcs=WCS(header)
+    
+    segment=seg.detect_sources(imgdata,pixvalmin,pixnum)
+    catalog=seg.SourceCatalog(imgdata, segment, wcs=imgwcs)
+    
+    regions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec)  for source in catalog ]
+    Regions(regions_list).write(outfile+"_deg.reg", format="ds9", overwrite=True) # outputs degrees 
+    
+    with open(outfile+"_deg.reg","r") as rf:
+        new_lines = []
+        append = new_lines.append
+
+        regionfile=rf.readlines()
+        for line in regionfile:
+            if line[0:6] == "circle":
+                regdata=line[7:-1]
+                ra,dec,apdeg = regdata.split(",")
+                line = f'circle({ra},{dec},{radius}")'
+            append(line)
+
+    with open(outfile+".reg",'w') as nrf:
+        nrf.write("\n".join(new_lines) + "\n")
+    
+
 def set_bitpix(hdul,BITPIX):
     if BITPIX==16: hdul[0].scale('int16')
     elif BITPIX==32: hdul[0].scale('int32')
