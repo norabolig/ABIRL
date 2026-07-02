@@ -119,9 +119,57 @@ def addCoords(fout,filelist,pxu=1e-3,BITPIX=-32):
         hdul.close()
         iter += 1
 
-def medianFilter(fout,filelist,BLOCKX=1,BLOCKY=1,BITPIX=-32):
+def medianFilter(fout,filelist,sigma_threshold=5,BLOCKX=1,BLOCKY=1,BITPIX=-32):
     """ 
-    Applies a median filter over the entire image in that it runs a window over
+    Applies a median filter over select pixels based on anomalies
+    the original data and replaces each pixel with the median for a window centred
+    on that pixel. BLOCKY and BLOCKX control the size of the rectangular window
+    (+/- BLOCK* from the centre pixel).
+    """
+
+    from scipy.ndimage import median_filter
+    fh = open(filelist, "r")
+    iter = 0
+    for line in fh:
+        fpath = line.rstrip()
+        print(fpath)
+        hdul = pyfits.open(fpath)
+
+        head = hdul[0].header
+        imgdata = hdul[0].data
+        print(imgdata.dtype.name)
+
+        Ndata = imgdata.size
+
+        NY, NX = imgdata.shape
+
+        filtered = median_filter(imgdata,size=(BLOCKY*2+1,BLOCKX*2+1))
+
+        diff = imgdata-filtered
+
+        mad = np.median(np.abs(diff - np.median(diff))) # median absolute deviation
+        robust_std = mad * 1.4826
+
+        mask = np.abs(diff) > (sigma_threshold * robust_std)
+
+        num_anomalies = np.sum(mask)
+        print(f"Found {num_anomalies} anomalous pixels (out of {imgdata.size}).")
+
+        cleaned_data = np.where(mask, filtered, imgdata)
+
+        set_bitpix(hdul,BITPIX)
+        head.set('comment', 'Median filtered (despiked) from {}'.format(fpath))
+        hdul[0].data = cleaned_data
+        
+
+        hdul.writeto(fout + "-" + repr(iter).zfill(6) + ".fits")
+        hdul.close()
+        iter += 1
+
+
+def medianSmooth(fout,filelist,BLOCKX=1,BLOCKY=1,BITPIX=-32):
+    """ 
+    Applies a median smooth filter over the entire image in that it runs a window over
     the original data and replaces each pixel with the median for a window centred
     on that pixel. BLOCKY and BLOCKX control the size of the rectangular window
     (+/- BLOCK* from the centre pixel).
@@ -883,6 +931,30 @@ def simpleApertureDeg(outfile,filelist,apertureFile,PSKIP=4,PANNULUS=4,ifstart=0
     if islist:fh.close()
     fhout.close()
 
+def getAMASS(outfile,filelist,ifstart=0):
+    """You need to first create a file list. Simple reads in the files, gets the
+       altitude info and prints out MJD and airmass.
+       takes (outfile,filelist,aperturelist)
+    """
+
+    fh = open(filelist, "r")
+
+    iter=0
+    for line in fh:
+        fpath = line.rstrip()
+        hdul = pyfits.open(fpath)
+
+        head = hdul[0].header
+        airmass = 1/np.cos(np.pi/2 - float(head['ALTPNT'])*np.pi/180)
+
+        fhout = open(outfile+ "-" + repr(iter+ifstart).zfill(6), "w")
+        
+        fhout.write("{}, {}, {}\n".format(fpath,head['MJD-OBS'],airmass))
+        fhout.close()
+        iter+=1
+    fh.close()
+ 
+
 
 def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
     """ Get magnitudes for objects in aperture file and compare with Gaia catalogue. 
@@ -1353,7 +1425,7 @@ def Sharpness(infile):
         dnorm = np.average(np.sqrt(dx*dx+dy*dy))
         return dnorm
 
-def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0,PLOT=False):
+def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,overwidth=16,sampleWidth=40,BITPIX=-32,rate=1,pixdx=1,pixdy=1,exposure=1,calMag=0,plot=False):
     """ region file in pixels """
 
     hdul = pyfits.open(imagefile)
@@ -1541,6 +1613,7 @@ def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,over
             count+=1
             s+=1
             xval = xb[i_xb_sorted[s]]
+        ix_last=s*1
         bgs=np.array(bgs)
         bg_median.append(np.median(bgs))
         isample+=1
@@ -1558,7 +1631,7 @@ def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,over
     line_surfb_md = -2.5*np.log10((flxs_median-bg_median)/arcsec_pix**2) + calMag
     line_surfb_mn = -2.5*np.log10((flxs_mean-bg_median)/arcsec_pix**2) + calMag
 
-    if PLOT==True:
+    if plot==True:
         import matplotlib.pylab as plt
         plt.figure()
         plt.scatter(xs,ys,s=0.2)
@@ -1589,6 +1662,10 @@ def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,over
         plt.plot(line_r,bg_median)
 
         plt.figure()
+        plt.title("Line Counts")
+        plt.plot(line_r,line_flux)
+
+        plt.figure()
         plt.title("Running magnitude")
         plt.xlabel('Pixels Along Streak')
         plt.ylabel('Mag')
@@ -1598,6 +1675,7 @@ def traceStreak(imagefile,regionfile,outtable="trace.tbl",fout=None,width=8,over
 
     fo=open(outtable,"w")
     fo.write("#pixel, surfb_md, surfb_mn, mag_on_line\n")
+    fo.write("#medians, {}, {}, {}\n".format(np.median(line_surfb_md),np.median(line_surfb_mn),np.median(line_mag)))
     for i in range(len(line_r)):
         fo.write("{} {} {} {}\n".format(line_r[i],line_surfb_md[i],line_surfb_mn[i],line_mag[i]))
     fo.close()
