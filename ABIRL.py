@@ -10,10 +10,10 @@ import sys
 import numpy as np
 import os
 
-def getRegions(outfile,infile,wcsfile, pixvalmin=1000, pixvalmax=10000, pixnum=5, radius=8):
+def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1):
     """
     Takes a .new image and a .wcs file and returns a .reg file containing stars in acceptable range.
-    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
+    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.F
     May require installation of photutils and regions
     """
     import photutils.segmentation as seg
@@ -25,10 +25,19 @@ def getRegions(outfile,infile,wcsfile, pixvalmin=1000, pixvalmax=10000, pixnum=5
     header=pyfits.getheader(wcsfile)
     imgwcs=WCS(header)
     
-    segment=seg.detect_sources(imgdata,pixvalmin,pixnum)
+    segment=seg.detect_sources(imgdata,ADUmin,pixnum)
     catalog=seg.SourceCatalog(imgdata, segment, wcs=imgwcs)
+    print(len(catalog),' sources found')
+
+    FWHM=sum(catalog.fwhm)/len(catalog.fwhm)
+    print('average FWHM:',FWHM)
+    radius=FWHM.value*2.5
+    print('using radius of ',radius,' arcsec')
+
+    usable=catalog[(catalog.max_value > ADUmin) & (catalog.max_value < ADUmax) & (catalog.fwhm < (FWHM+FWHM/2)) & (catalog.fwhm > (FWHM-FWHM/2))]
+    print(len(usable),' sources used in reg file')
     
-    regions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec)  for source in catalog ]
+    regions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec)  for source in usable ]
     Regions(regions_list).write(outfile+"_deg.reg", format="ds9", overwrite=True) # outputs degrees 
     
     with open(outfile+"_deg.reg","r") as rf:
