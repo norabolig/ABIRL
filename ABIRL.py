@@ -13,7 +13,7 @@ import os
 def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1):
     """
     Takes a .new image and a .wcs file and returns a .reg file containing stars in acceptable range.
-    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.F
+    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
     May require installation of photutils and regions
     """
     import photutils.segmentation as seg
@@ -26,20 +26,31 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1):
     imgwcs=WCS(header)
     
     segment=seg.detect_sources(imgdata,ADUmin,pixnum)
-    catalog=seg.SourceCatalog(imgdata, segment, wcs=imgwcs)
+    allsources=seg.SourceCatalog(imgdata, segment, wcs=imgwcs)
+
+    ny, nx = imgdata.shape
+    edge = 14
+
+    catalog=allsources[(allsources.bbox_xmin > edge) & (allsources.bbox_ymin > edge) & (allsources.bbox_xmax < (nx - 1 - edge)) & (allsources.bbox_ymax < (ny - 1 - edge))]
+    
     print(len(catalog),' sources found')
 
-    FWHM=sum(catalog.fwhm)/len(catalog.fwhm)
+    FWHM=sum(catalog.fwhm[catalog.max_value < ADUmax])/len(catalog.fwhm[catalog.max_value < ADUmax])
     print('average FWHM:',FWHM)
     radius=FWHM.value*2.5
     print('using radius of ',radius,' arcsec')
 
     usable=catalog[(catalog.max_value > ADUmin) & (catalog.max_value < ADUmax) & (catalog.fwhm < (FWHM+FWHM/2)) & (catalog.fwhm > (FWHM-FWHM/2))]
     print(len(usable),' sources used in reg file')
-    
+    unusable=catalog[(catalog.max_value < ADUmin) | (catalog.max_value > ADUmax) | (catalog.fwhm > (FWHM+FWHM/2)) | (catalog.fwhm < (FWHM-FWHM/2))]
+    print(len(unusable), 'sources excluded')
+
     regions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec)  for source in usable ]
     Regions(regions_list).write(outfile+"_deg.reg", format="ds9", overwrite=True) # outputs degrees 
-    
+
+    exclusions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec) for source in unusable ]
+    Regions(exclusions_list).write(outfile+"_unused_deg.reg", format="ds9", overwrite=True)
+
     with open(outfile+"_deg.reg","r") as rf:
         new_lines = []
         append = new_lines.append
