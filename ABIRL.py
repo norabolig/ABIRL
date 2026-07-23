@@ -1037,15 +1037,19 @@ def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
          try: x,y,ra,dec,adu,magInst=item.split()
          except: continue
          magInst=float(magInst)
-         gaia_json=apiEx.gaiaDR3_cone_search(ra,dec,rad,pgsize=1000,page=1)
-         gaia_table=apiEx.mast_json2table(gaia_json)
-         if len(gaia_table)>1:
-           id=np.argsort(gaia_table[:]["phot_g_mean_mag"])
-           row=gaia_table[id[0]]
-         else: row=gaia_table[0]
-         G  =row["phot_g_mean_mag"]
-         GBP=row["phot_bp_mean_mag"]
-         GRP=row["phot_rp_mean_mag"]
+         try:
+             gaia_json=apiEx.gaiaDR3_cone_search(ra,dec,rad,pgsize=1000,page=1)
+             gaia_table=apiEx.mast_json2table(gaia_json)
+             if len(gaia_table)>1:
+               id=np.argsort(gaia_table[:]["phot_g_mean_mag"])
+               row=gaia_table[id[0]]
+             else: row=gaia_table[0]
+             G  =row["phot_g_mean_mag"]
+             GBP=row["phot_bp_mean_mag"]
+             GRP=row["phot_rp_mean_mag"]
+         except:
+             out+="#unable to find source in Gaia catalogue at {} {}\n".format(x,y)
+             continue
 
          col = GBP-GRP
 
@@ -1064,28 +1068,22 @@ def getMags(fout,photlist,rad=0.0014,fltr='g',tol=1e-4):
 
 
          elif fltr=='R':
-             # fix at some point for correct power multiplication
              GminusR= -0.02275 + col*(0.3961 + col*(-0.1243 + col*( -0.01396 + col*0.003775)))
              magout = G-GminusR
              const.append(magout-magInst)
              magConst+=magout-magInst
 
          elif fltr=='V':
+             # fix at some point for correct power multiplication
              GminusV= -0.02704 + 0.01424*(col) -0.2156*col**2 + 0.01426*col**3
              magout = G-GminusV
              const.append(magout-magInst)
              magConst+=magout-magInst
 
          elif fltr=='B':
-             GminusV= -0.02704 + 0.01424*(col) -0.2156*col**2 + 0.01426*col**3
-             diff=999
-             BminusV0=GminusV*1
-             while diff > tol:
-                 BminusV  = -(GminusV + 0.04749 +0.2901*BminusV0**2 - 0.02008*BminusV0**3)/0.0124
-                 diff = np.abs(BminusV-BminusV0)
-                 BminusV0=BminusV*1
-
-             magout = G-GminusV + BminusV
+             # fix at some point for correct power multiplication
+             GminusB = 0.01448 -0.6874*col -0.3604*col*col + 0.06718*col**3 - 0.006061*col**4 
+             magout = G-GminusB
 
              const.append(magout-magInst)
              magConst+=magout-magInst
