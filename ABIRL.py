@@ -39,7 +39,7 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge
     radius=FWHM.value*2.5
     print('using radius of ',radius,' arcsec')
 
-    usable=catalog[(catalog.max_value > ADUmin) & (catalog.max_value < ADUmax) & (catalog.fwhm < (FWHM+FWHM/2)) & (catalog.fwhm > (FWHM-FWHM/2))]
+    usable=catalog[(catalog.max_value >= ADUmin) & (catalog.max_value <= ADUmax) & (catalog.fwhm <= (FWHM+FWHM/2)) & (catalog.fwhm >= (FWHM-FWHM/2))]
     print(len(usable),' sources used in reg file')
     unusable=catalog[(catalog.max_value < ADUmin) | (catalog.max_value > ADUmax) | (catalog.fwhm > (FWHM+FWHM/2)) | (catalog.fwhm < (FWHM-FWHM/2))]
     print(len(unusable), 'sources excluded')
