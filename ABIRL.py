@@ -10,7 +10,7 @@ import sys
 import numpy as np
 import os
 
-def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1):
+def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge=14):
     """
     Takes a .new image and a .wcs file and returns a .reg file containing stars in acceptable range.
     min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
@@ -29,7 +29,6 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1):
     allsources=seg.SourceCatalog(imgdata, segment, wcs=imgwcs)
 
     ny, nx = imgdata.shape
-    edge = 14
 
     catalog=allsources[(allsources.bbox_xmin > edge) & (allsources.bbox_ymin > edge) & (allsources.bbox_xmax < (nx - 1 - edge)) & (allsources.bbox_ymax < (ny - 1 - edge))]
     
