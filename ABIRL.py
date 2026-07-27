@@ -10,11 +10,14 @@ import sys
 import numpy as np
 import os
 
-def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge=14):
+def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge=14, verbose=True):
     """
-    Takes a .new image and a .wcs file and returns a .reg file containing stars in acceptable range.
-    min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
-    May require installation of photutils and regions
+    Takes a .new image and a .wcs file and returns a .reg file containing stars filtered by adu and FWHM
+    ADU min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
+    edge is the number of pixels around the edge from which sources will be filtered out to prevent partially cut off sources.
+    Verbose turns on print statements and returned values for troubleshooting.
+    Will write three region files, usable stars with default unit degrees, usable stars with corrected units of arcseconds, and unusable stars in degrees.
+    May require installation of the packages photutils and regions
     """
     import photutils.segmentation as seg
     from regions import Regions, CircleSkyRegion 
@@ -31,18 +34,23 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge
     ny, nx = imgdata.shape
 
     catalog=allsources[(allsources.bbox_xmin > edge) & (allsources.bbox_ymin > edge) & (allsources.bbox_xmax < (nx - 1 - edge)) & (allsources.bbox_ymax < (ny - 1 - edge))]
-    
-    print(len(catalog),' sources found')
+
+    if verbose is True:
+        print(len(catalog),' sources found')
 
     FWHM=sum(catalog.fwhm[catalog.max_value < ADUmax])/len(catalog.fwhm[catalog.max_value < ADUmax])
-    print('average FWHM:',FWHM)
     radius=FWHM.value*2.5
-    print('using radius of ',radius,' arcsec')
 
-    usable=catalog[(catalog.max_value >= ADUmin) & (catalog.max_value <= ADUmax) & (catalog.fwhm <= (FWHM+FWHM/2)) & (catalog.fwhm >= (FWHM-FWHM/2))]
-    print(len(usable),' sources used in reg file')
-    unusable=catalog[(catalog.max_value < ADUmin) | (catalog.max_value > ADUmax) | (catalog.fwhm > (FWHM+FWHM/2)) | (catalog.fwhm < (FWHM-FWHM/2))]
-    print(len(unusable), 'sources excluded')
+    if verbose is True:
+        print('average FWHM:',FWHM)
+        print('using radius of ',radius,' arcsec')
+    
+    filter=((catalog.max_value >= ADUmin) & (catalog.max_value <= ADUmax) & (catalog.fwhm <= (FWHM+FWHM/2)) & (catalog.fwhm >= (FWHM-FWHM/2)))
+    usable=catalog[filter]
+    unusable=catalog[~filter]
+    if verbose is True:
+        print(len(usable),' sources used in reg file')
+        print(len(unusable), 'sources excluded')
 
     regions_list = [ CircleSkyRegion(source.sky_centroid, radius=radius * u.arcsec)  for source in usable ]
     Regions(regions_list).write(outfile+"_deg.reg", format="ds9", overwrite=True) # outputs degrees 
@@ -65,6 +73,8 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge
     with open(outfile+".reg",'w') as nrf:
         nrf.write("\n".join(new_lines) + "\n")
     
+    if verbose is True: 
+        return radius, len(usable)
 
 def set_bitpix(hdul,BITPIX):
     if BITPIX==16: hdul[0].scale('int16')
