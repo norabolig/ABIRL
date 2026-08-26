@@ -10,15 +10,19 @@ import sys
 import numpy as np
 import os
 
-def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge=14, verbose=True):
+def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge=14, verbose=True, troubleshooting=False, NaNbgone=False):
     """
     Takes a .new image and a .wcs file and returns a .reg file containing stars filtered by adu and FWHM
     ADU min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
     edge is the number of pixels around the edge from which sources will be filtered out to prevent partially cut off sources.
-    Verbose turns on print statements and returned values for troubleshooting.
+    Verbose turns on print statements and returned values.
+    Troubleshooting turns on large print statements and a forced radius of 10 so region files may be investigated.
     Will write three region files, usable stars with default unit degrees, usable stars with corrected units of arcseconds, and unusable stars in degrees.
     May require installation of the packages photutils and regions
+    May error in bad weather conditions.
+    NaNs should be looked at using troubleshooting before using the nan filter to make sure they are just minor photutils mistakes and not larger problems.
     """
+
     import photutils.segmentation as seg
     from regions import Regions, CircleSkyRegion 
     import astropy.units as u
@@ -38,16 +42,31 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge
     if verbose is True:
         print(len(catalog),' sources found')
 
-    FWHM=sum(catalog.fwhm[catalog.max_value < ADUmax])/len(catalog.fwhm[catalog.max_value < ADUmax])
+    if troubleshooting is True:
+        print("FWHM:", catalog.fwhm)
+        print("MAX:", catalog.max_value, )
+
+    if NaNbgone==True:
+        FWHM=sum(catalog.fwhm[(catalog.max_value < ADUmax) & (np.isnan(catalog.fwhm)==False)])/len(catalog.fwhm[(catalog.max_value < ADUmax) & (np.isnan(catalog.fwhm)==False)])
+    else:
+        FWHM=sum(catalog.fwhm[catalog.max_value < ADUmax])/len(catalog.fwhm[catalog.max_value < ADUmax])
+
     radius=FWHM.value*2.5
+
+    if np.isnan(radius) == True:
+        print("Error, average fwhm is NaN. NaN fwhm values can be inspected by setting troubleshooting=True. if many are present, the weather or background may be brighter than ADUmin.NaN values may be filtered out by toggling NaNgone=True")
 
     if verbose is True:
         print('average FWHM:',FWHM)
         print('using radius of ',radius,' arcsec')
-    
-    filter=((catalog.max_value >= ADUmin) & (catalog.max_value <= ADUmax) & (catalog.fwhm <= (FWHM+FWHM/2)) & (catalog.fwhm >= (FWHM-FWHM/2)))
-    usable=catalog[filter]
-    unusable=catalog[~filter]
+        
+    if NaNbgone == True:
+        fltr=((catalog.max_value >= ADUmin) & (catalog.max_value <= ADUmax) & (catalog.fwhm <= (FWHM+FWHM/2)) & (catalog.fwhm >= (FWHM-FWHM/2)) & (np.isnan(catalog.fwhm)==False))
+    else:
+        fltr=((catalog.max_value >= ADUmin) & (catalog.max_value <= ADUmax) & (catalog.fwhm <= (FWHM+FWHM/2)) & (catalog.fwhm >= (FWHM-FWHM/2)))
+    usable=catalog[fltr]
+    unusable=catalog[~fltr]
+
     if verbose is True:
         print(len(usable),' sources used in reg file')
         print(len(unusable), 'sources excluded')
