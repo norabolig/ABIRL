@@ -10,17 +10,19 @@ import sys
 import numpy as np
 import os
 
-def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge=14, verbose=True, troubleshooting=False, NaNbgone=False):
+def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, radius=None, edge=14, verbose=True, troubleshooting=False, NaNbgone=False):
     """
-    Takes a .new image and a .wcs file and returns a .reg file containing stars filtered by adu and FWHM
+    Takes a .new image and a .wcs file and returns a .reg file containing stars filtered by adu and FWHM.
+    Input image should have been median filtered to remove cosmic rays.
     ADU min and max should be pixel values, and pixnum is number of pixels in acceptable range neccessary to detect a source.
     edge is the number of pixels around the edge from which sources will be filtered out to prevent partially cut off sources.
     Verbose turns on print statements and returned values.
     Troubleshooting turns on large print statements and a forced radius of 10 so region files may be investigated.
     Will write three region files, usable stars with default unit degrees, usable stars with corrected units of arcseconds, and unusable stars in degrees.
-    May require installation of the packages photutils and regions
+    May require installation of the packages photutils and regions.
     May error in bad weather conditions.
     NaNs should be looked at using troubleshooting before using the nan filter to make sure they are just minor photutils mistakes and not larger problems.
+    radius can be set to a value in arcseconds if the FWHM based automatic value is wrong for your image.
     """
 
     import photutils.segmentation as seg
@@ -50,8 +52,9 @@ def getRegions(outfile,infile,wcsfile, ADUmin=1000, ADUmax=10000, pixnum=1, edge
         FWHM=sum(catalog.fwhm[(catalog.max_value < ADUmax) & (np.isnan(catalog.fwhm)==False)])/len(catalog.fwhm[(catalog.max_value < ADUmax) & (np.isnan(catalog.fwhm)==False)])
     else:
         FWHM=sum(catalog.fwhm[catalog.max_value < ADUmax])/len(catalog.fwhm[catalog.max_value < ADUmax])
-
-    radius=FWHM.value*2.5
+    
+    if radius==None:
+        radius=FWHM.value*2.5
 
     if np.isnan(radius) == True:
         print("Error, average fwhm is NaN. NaN fwhm values can be inspected by setting troubleshooting=True. if many are present, the weather or background may be brighter than ADUmin.NaN values may be filtered out by toggling NaNgone=True")
